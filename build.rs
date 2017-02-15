@@ -1,4 +1,4 @@
 
 fn main () {
-    println!("cargo:rustc-link-lib={}", libname);
+    println!("cargo:rustc-link-lib=fuse");
 }
