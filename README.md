@@ -58,6 +58,11 @@ There's still a lot of stuff to be done. Feel free to contribute.
 
 In general, see the [list of issues](https://github.com/zargony/rust-fuse/issues) on GitHub and search the source files for comments containing "TODO" or "FIXME" to see what's still missing.
 
+### Android
+
+- You will provide arm version of libfuse.so in $NDK_HOME/platforms/android-18/arch-arm/usr/lib/
+- Replace android-18 by anything you want
+
 ## Compatibility
 
 Developed and tested on Mac OS X with [OSXFUSE](http://osxfuse.github.io) and on Linux with [FUSE](http://fuse.sourceforge.net), using stable, beta and nightly [Rust versions](http://www.rust-lang.org/install.html) (see [Travis CI](https://travis-ci.org/zargony/rust-fuse) for details).
