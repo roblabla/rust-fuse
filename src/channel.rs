@@ -11,11 +11,20 @@ use fuse::{fuse_args, fuse_mount_compat25};
 use reply::ReplySender;
 
 /// Helper function to provide options as a fuse_args struct
-/// (which contains an argc count and an argv pointer)
+
+#[cfg(target_arch = "arm")]
 fn with_fuse_args<T, F: FnOnce(&fuse_args) -> T> (options: &[&OsStr], f: F) -> T {
     let mut args: Vec<CString> = vec![CString::new("rust-fuse").unwrap()];
     args.extend(options.iter().map(|s| CString::new(s.as_bytes()).unwrap() ));
-    let argptrs: Vec<*const i8> = args.iter().map(|s| s.as_ptr()).collect();
+    let argptrs: Vec<*const u8> = args.iter().map(|s| s.as_ptr()).collect();
+    f(&fuse_args { argc: argptrs.len() as i32, argv: argptrs.as_ptr(), allocated: 0 })
+}
+
+#[cfg(not(target_arch = "arm"))]
+fn with_fuse_args<T, F: FnOnce(&fuse_args) -> T> (options: &[&OsStr], f: F) -> T {
+    let mut args = vec![CString::new("rust-fuse").unwrap()];
+    args.extend(options.iter().map(|s| CString::new(s.as_bytes()).unwrap()));
+    let argptrs: Vec<_> = args.iter().map(|s| s.as_ptr()).collect();
     f(&fuse_args { argc: argptrs.len() as i32, argv: argptrs.as_ptr(), allocated: 0 })
 }
 

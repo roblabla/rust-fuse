@@ -12,10 +12,9 @@ use std::fmt;
 use std::path::{PathBuf, Path};
 use thread_scoped::{scoped, JoinGuard};
 use libc::{EAGAIN, EINTR, ENODEV, ENOENT};
-use channel;
-use channel::Channel;
+use channel::{self, Channel};
 use Filesystem;
-use request::{request, dispatch};
+use request;
 
 /// The max size of write requests from the kernel. The absolute minimum is 4k,
 /// FUSE recommends at least 128k, max 16M. The FUSE default is 16M on OS X
@@ -45,20 +44,17 @@ pub struct Session<FS: Filesystem> {
 
 impl<FS: Filesystem> Session<FS> {
     /// Create a new session by mounting the given filesystem to the given mountpoint
-    pub fn new (filesystem: FS, mountpoint: &Path, options: &[&OsStr]) -> Session<FS> {
+    pub fn new (filesystem: FS, mountpoint: &Path, options: &[&OsStr]) -> io::Result<Session<FS>> {
         info!("Mounting {}", mountpoint.display());
-        let ch = match Channel::new(mountpoint, options) {
-            Ok(ch) => ch,
-            Err(err) => panic!("Unable to mount filesystem. Error {}", err),
-        };
-        Session {
-            filesystem: filesystem,
-            ch: ch,
-            proto_major: 0,
-            proto_minor: 0,
-            initialized: false,
-            destroyed: false,
-        }
+        Channel::new(mountpoint, options).map(
+            |ch| Session {
+                filesystem: filesystem,
+                ch: ch,
+                proto_major: 0,
+                proto_minor: 0,
+                initialized: false,
+                destroyed: false,
+            })
     }
 
     /// Return path of the mounted filesystem
@@ -70,7 +66,7 @@ impl<FS: Filesystem> Session<FS> {
     /// calls into the filesystem. This read-dispatch-loop is non-concurrent to prevent
     /// having multiple buffers (which take up much memory), but the filesystem methods
     /// may run concurrent by spawning threads.
-    pub fn run (&mut self) {
+    pub fn run (&mut self) -> io::Result<()> {
         // Buffer for receiving requests from the kernel. Only one is allocated and
         // it is reused immediately after dispatching to conserve memory and allocations.
         let mut buffer: Vec<u8> = Vec::with_capacity(BUFFER_SIZE);
@@ -78,13 +74,13 @@ impl<FS: Filesystem> Session<FS> {
             // Read the next request from the given channel to kernel driver
             // The kernel driver makes sure that we get exactly one request per read
             match self.ch.receive(&mut buffer) {
-                Ok(()) => match request(self.ch.sender(), &buffer) {
+                Ok(()) => match request::request(self.ch.sender(), &buffer) {
                     // Dispatch request
-                    Some(req) => dispatch(&req, self),
+                    Some(req) => request::dispatch(&req, self),
                     // Quit loop on illegal request
                     None => break,
                 },
-                Err(ref err) => match err.raw_os_error() {
+                Err(err) => match err.raw_os_error() {
                     // Operation interrupted. Accordingly to FUSE, this is safe to retry
                     Some(ENOENT) => continue,
                     // Interrupted system call, retry
@@ -94,10 +90,11 @@ impl<FS: Filesystem> Session<FS> {
                     // Filesystem was unmounted, quit the loop
                     Some(ENODEV) => break,
                     // Unhandled error
-                    _ => panic!("Lost connection to FUSE device. Error: {}", err),
+                    _ => return Err(err),
                 },
             }
         }
+        Ok(())
     }
 }
 
@@ -119,7 +116,7 @@ pub struct BackgroundSession<'a> {
     /// Path of the mounted filesystem
     pub mountpoint: PathBuf,
     /// Thread guard of the background session
-    pub guard: JoinGuard<'a, ()>,
+    pub guard: JoinGuard<'a, io::Result<()>>,
 }
 
 impl<'a> BackgroundSession<'a> {
@@ -130,7 +127,7 @@ impl<'a> BackgroundSession<'a> {
         let mountpoint = se.mountpoint().to_path_buf();
         let guard = scoped(move || {
             let mut se = se;
-            se.run();
+            se.run()
         });
         Ok(BackgroundSession { mountpoint: mountpoint, guard: guard })
     }

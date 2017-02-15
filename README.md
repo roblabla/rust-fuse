@@ -1,16 +1,18 @@
 # Rust FUSE - Filesystem in Userspace
 
 [![Build Status](https://travis-ci.org/zargony/rust-fuse.svg?branch=master)](https://travis-ci.org/zargony/rust-fuse)
-[![Crates.io](http://meritbadge.herokuapp.com/fuse)](https://crates.io/crates/fuse)
+[![Crates.io](https://img.shields.io/crates/v/fuse.svg)](https://crates.io/crates/fuse)
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/zargony/rust-fuse/blob/master/LICENSE.md)
 
 ## About
+
 [Rust](http://rust-lang.org/) library for easy implementation of [FUSE](http://osxfuse.github.io) filesystems in userspace.
 
 This library does not just provide bindings, it is actually an improved rewrite of the original FUSE C library to fully take advantage of Rust's architecture.
 
 ## Documentation
 
-[Rust-FUSE reference](https://zargony.github.io/rust-fuse)
+[Rust-FUSE reference](https://docs.rs/fuse)
 
 ## Details
 
@@ -57,6 +59,11 @@ There's still a lot of stuff to be done. Feel free to contribute.
 - An additional more high level API would be nice. It should provide pathnames instead inode numbers and automatically handle concurrency and interruption (like the FUSE C library's high level API).
 
 In general, see the [list of issues](https://github.com/zargony/rust-fuse/issues) on GitHub and search the source files for comments containing "TODO" or "FIXME" to see what's still missing.
+
+### Android
+
+- You will provide arm version of libfuse.so in $NDK_HOME/platforms/android-18/arch-arm/usr/lib/
+- Replace android-18 by anything you want
 
 ## Compatibility
 

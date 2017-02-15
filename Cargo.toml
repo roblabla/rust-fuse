@@ -1,9 +1,10 @@
 [package]
 name = "fuse"
 version = "0.2.8"
-authors = ["Andreas Neuhaus <zargony@zargony.com>"]
 build = "build.rs"
+authors = ["Andreas Neuhaus <zargony@zargony.com>", "Eric Delanghe <delanghe.eric.dev@gmail.com>"]
 description = "Rust library for filesystems in userspace (FUSE)"
+documentation = "https://docs.rs/fuse"
 homepage = "https://github.com/zargony/rust-fuse"
 repository = "https://github.com/zargony/rust-fuse"
 readme = "README.md"
@@ -18,6 +19,9 @@ libc = "0.2"
 log = "0.3"
 time = "0.1"
 thread-scoped = "1.0"
+
+[dev-dependencies]
+env_logger = "0.3"
 
 [lib]
 name = "fuse"
