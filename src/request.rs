@@ -348,8 +348,8 @@ impl<'a> Request<'a> {
             #[cfg(target_os = "macos")]
             FUSE_EXCHANGE => {                          // OS X only
                 let arg: &fuse_exchange_in = data.fetch();
-                let oldname = data.fetch_path();
-                let newname = data.fetch_path();
+                let oldname = data.fetch_str();
+                let newname = data.fetch_str();
                 debug!("EXCHANGE({}) parent {:#018x}, name {:?}, newparent {:#018x}, newname {:?}, options {:#x}", self.header.unique, arg.olddir, oldname, arg.newdir, newname, arg.options);
                 se.filesystem.exchange(self, arg.olddir, &oldname, arg.newdir, &newname, arg.options, self.reply());
             },
