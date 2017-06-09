@@ -39,7 +39,7 @@ fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64) -> i32
     // TODO:Check mountpoint
     // TODO:Check nonempty
     // TODO:Check auto_umount
-    let f = OpenOptions::new().read(true).write(true).open("/dev/fuse").unwrap();
+    let mut f = OpenOptions::new().read(true).write(true).open("/dev/fuse").unwrap();
 
 
     // TODO:Check f
@@ -84,7 +84,8 @@ fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64) -> i32
 const MS_NOSUID :u64 = 2;
 const MS_NODEV  :u64 = 4;
 
-fn fuse_mount_compat25(mountpoint: &PathBuf, _: &fuse_args) -> i32
+use libc::perror;
+fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> i32
 {
     let flags = MS_NOSUID | MS_NODEV;
 
@@ -203,11 +204,18 @@ pub fn unmount (mountpoint: &Path) -> io::Result<()> {
     #[cfg(not(any(target_os = "macos", target_os = "freebsd", target_os = "dragonfly",
                   target_os = "openbsd", target_os = "bitrig", target_os = "netbsd")))] #[inline]
     fn libc_umount (mnt: &CStr) -> c_int {
+        use fuse::fuse_unmount_compat22;
+        use std::io::ErrorKind::PermissionDenied;
 
-        // TODO: Recode fuse_unmount_compat22 in pure rust.
-        // This impl might not work if the process calling umount is not root.
         let rc = unsafe { libc::umount(mnt.as_ptr()) };
-        rc
+        if rc < 0 && io::Error::last_os_error().kind() == PermissionDenied {
+            // Linux always returns EPERM for non-root users.  We have to let the
+            // library go through the setuid-root "fusermount -u" to unmount.
+            unsafe { fuse_unmount_compat22(mnt.as_ptr()); }
+            0
+        } else {
+            rc
+        }
     }
 
     let mnt = try!(CString::new(mountpoint.as_os_str().as_bytes()));
