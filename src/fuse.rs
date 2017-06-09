@@ -19,14 +19,6 @@ pub struct fuse_args {
 }
 
 //
-// FUSE common (see fuse_common_compat.h for details)
-//
-
-extern "system" {
-    pub fn fuse_unmount_compat22 (mountpoint: *const c_char);
-}
-
-//
 // FUSE kernel (see fuse_kernel.h for details)
 //
 

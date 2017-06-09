@@ -1,7 +1,6 @@
 [package]
 name = "fuse"
 version = "0.3.0"
-build = "build.rs"
 authors = ["Andreas Neuhaus <zargony@zargony.com>", "Eric Delanghe <delanghe.eric.dev@gmail.com>"]
 description = "Rust library for filesystems in userspace (FUSE)"
 documentation = "https://docs.rs/fuse"
@@ -11,9 +10,6 @@ readme = "README.md"
 keywords = ["fuse", "filesystem", "system", "bindings"]
 categories = ["api-bindings", "filesystem"]
 license = "MIT"
-
-[build-dependencies]
-pkg-config = "0.3"
 
 [dependencies]
 libc = "0.2"
