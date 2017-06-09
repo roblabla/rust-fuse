@@ -23,7 +23,6 @@ pub struct fuse_args {
 //
 
 extern "system" {
-    pub fn fuse_mount_compat25 (mountpoint: *const c_char, args: *const fuse_args) -> c_int;
     pub fn fuse_unmount_compat22 (mountpoint: *const c_char);
 }
 
