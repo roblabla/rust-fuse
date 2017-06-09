@@ -61,14 +61,15 @@ fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64) -> i32
 	       mo->fsname ? mo->fsname : (mo->subtype ? mo->subtype : devname));
 
     */
-    println!("{}", opts);
     info!("{}", opts);
     let c_sources = CString::new("/dev/fuse").unwrap();
     let c_mnt = CString::new(mountpoint.as_os_str().as_bytes()).unwrap();
     let c_fs = CString::new("fuse").unwrap();
     let c_opts = CString::new(opts).unwrap();
-    println!("MOUNT({:?} {:?} {:?} {:?})", c_sources, c_mnt, c_fs, c_opts);
+    info!("MOUNT({:?} {:?} {:?} {:?})", c_sources, c_mnt, c_fs, c_opts);
     let res = unsafe{
+        #[cfg(target_pointer_width = "32")]
+        let flags = flags as u32;
         mount(c_sources.as_ptr(), c_mnt.as_ptr(), c_fs.as_ptr(), flags, c_opts.as_ptr() as *mut c_void)
     };
     if res < 0 {
