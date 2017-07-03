@@ -33,6 +33,7 @@ use libc::mount;
 use std::fs::OpenOptions;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::io::IntoRawFd;
+
 fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64) -> i32
 {
     // TODO:Check args
@@ -59,7 +60,6 @@ fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64) -> i32
 	}
 	strcpy(source,
 	       mo->fsname ? mo->fsname : (mo->subtype ? mo->subtype : devname));
-
     */
     info!("{}", opts);
     let c_sources = CString::new("/dev/fuse").unwrap();
@@ -73,34 +73,54 @@ fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64) -> i32
         mount(c_sources.as_ptr(), c_mnt.as_ptr(), c_fs.as_ptr(), flags, c_opts.as_ptr() as *mut c_void)
     };
     if res < 0 {
-        // TODO: error    
-        error!("fuse_mount_sys ERROR: {}", res);
-        panic!("fuse_mount_sys panic!");
+        return res;
+    } else {
+        return f.into_raw_fd();
     }
-    f.into_raw_fd()
 }
 
 // /usr/include/sys/mount.h
 const MS_NOSUID :u64 = 2;
 const MS_NODEV  :u64 = 4;
 
-fn fuse_mount_compat25(mountpoint: &PathBuf, _: &fuse_args) -> i32
+fn fuse_mount_fusermount(mountpoint: &PathBuf, _: &fuse_args) -> i32
+{
+    return 0 // TODO:
+}
+
+fn fuse_kern_mount(mountpoint: &PathBuf, args: &fuse_args) -> i32
 {
     let flags = MS_NOSUID | MS_NODEV;
 
-// TODO: parse fuse_args
-/*
-    pub argc: c_int,
-    pub argv: *const *const c_char,
-    pub allocated: c_int,
-*/
-// TODO: check if allow_other and allow_root aren't mutually active
-// TODO: check if help
-// TODO: get kernel/other flags options
-   let res = fuse_mount_sys(mountpoint, flags);
-   println!("fantafs: fuse_mount_compat25: fd={}", res);
-   // TODO: ERROR
-   res
+    // TODO: parse fuse_args
+    /*
+       pub argc: c_int,
+       pub argv: *const *const c_char,
+       pub allocated: c_int,
+       */
+    // TODO: check if allow_other and allow_root aren't mutually active
+    // TODO: check if help
+    // TODO: get kernel/other flags options
+
+    let res = fuse_mount_sys(mountpoint, flags);
+    if res < 0 {
+        // TODO: error
+        if res == libc::EPERM {
+            warn!("fuse_mount_sys no enougth permission for mount_sys");
+            return fuse_mount_fusermount(mountpoint, args);
+        } else {
+            error!("fuse_mount_sys unknown ERROR: {}", res);
+            panic!("fuse_mount_sys panic!");
+        }
+    }
+    println!("fantafs: fuse_mount_compat25: fd={}", res);
+    // TODO: ERROR
+    res
+}
+
+fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> i32
+{
+    fuse_kern_mount(mountpoint, args)
 }
 
 impl Channel {
