@@ -518,17 +518,42 @@ pub struct fuse_dirent {
     // followed by name of namelen bytes
 }
 
+#[cfg(feature="rust-mount")]
 use std::ffi::CString;
+#[cfg(feature="rust-mount")]
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 
+#[cfg(feature="rust-mount")]
 use libc::getuid;
+#[cfg(feature="rust-mount")]
 use libc::getgid;
+#[cfg(feature="rust-mount")]
 use libc::mount;
+#[cfg(feature="rust-mount")]
 use std::fs::OpenOptions;
+#[cfg(feature="rust-mount")]
 use std::os::unix::io::AsRawFd;
+#[cfg(feature="rust-mount")]
 use std::os::unix::io::IntoRawFd;
 
+use std;
+
+mod sys {
+    #[cfg(not(feature="rust-mount"))]
+    use libc::{c_int, c_char};
+    #[cfg(not(feature="rust-mount"))]
+    use super::fuse_args;
+    extern "system" {
+        #[cfg(not(feature="rust-mount"))]
+        pub fn fuse_mount_compat25(mountpoint: *const c_char, args: *const fuse_args) -> c_int;
+        #[cfg(not(feature="rust-mount"))]
+        pub fn fuse_unmount_compat22 (mountpoint: *const c_char);
+    }
+}
+
+
+#[cfg(feature="rust-mount")]
 fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64) -> i32
 {
     // TODO:Check args
@@ -579,11 +604,18 @@ const MS_NOSUID :u64 = 2;
 const MS_NODEV  :u64 = 4;
 const FUSE_COMMFD_ENV: &str = "_FUSE_COMMFD";
 
+#[cfg(feature="rust-mount")]
 use sendfd::UnixSendFd;
+#[cfg(feature="rust-mount")]
 use std::process::{Command, Stdio};
+#[cfg(feature="rust-mount")]
 use std::os::unix::net::UnixStream;
+#[cfg(feature="rust-mount")]
 use libc::{self, c_void};
+#[cfg(feature="rust-mount")]
+use errno::errno;
 
+#[cfg(feature="rust-mount")]
 fn fuse_mount_fusermount(mountpoint: &PathBuf, _: &fuse_args) -> i32
 {
     let (sock1, sock2) = match UnixStream::pair() {
@@ -616,8 +648,7 @@ fn fuse_mount_fusermount(mountpoint: &PathBuf, _: &fuse_args) -> i32
     return sock1.recvfd().unwrap_or(-1);
 }
 
-use errno::errno;
-
+#[cfg(feature="rust-mount")]
 fn fuse_kern_mount(mountpoint: &PathBuf, args: &fuse_args) -> i32
 {
     let flags = MS_NOSUID | MS_NODEV;
@@ -649,7 +680,23 @@ fn fuse_kern_mount(mountpoint: &PathBuf, args: &fuse_args) -> i32
     res
 }
 
-pub fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> i32
+#[cfg(feature="rust-mount")]
+pub fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> std::io::Result<i32>
 {
-    fuse_kern_mount(mountpoint, args)
+    Ok(fuse_kern_mount(mountpoint, args))
+}
+
+#[cfg(not(feature="rust-mount"))]
+pub fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> std::io::Result<i32>
+{
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let mnt = try!(CString::new(mountpoint.as_os_str().as_bytes()));
+    let fd = unsafe { sys::fuse_mount_compat25(mnt.as_ptr(), args) };
+    if fd < 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(fd)
+    }
 }

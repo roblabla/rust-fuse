@@ -37,7 +37,7 @@ impl Channel {
     pub fn new (mountpoint: &Path, options: &[&OsStr]) -> io::Result<Channel> {
         let mountpoint = try!(mountpoint.canonicalize());
         with_fuse_args(options, |args| {
-            let fd = fuse_mount_compat25(&mountpoint, args);
+            let fd = fuse_mount_compat25(&mountpoint, args)?;
             if fd < 0 {
                 Err(io::Error::last_os_error())
             } else {

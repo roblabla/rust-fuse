@@ -10,13 +10,15 @@
 #![warn(missing_docs, bad_style, unused, unused_extern_crates, unused_import_braces, unused_qualifications, missing_debug_implementations)]
 
 extern crate libc;
+#[cfg(feature="rust-mount")]
 extern crate errno;
+#[cfg(feature="rust-mount")]
+extern crate sendfd;
 
 #[macro_use]
 extern crate log;
 extern crate time;
 extern crate thread_scoped;
-extern crate sendfd;
 
 use std::convert::AsRef;
 use std::io;
