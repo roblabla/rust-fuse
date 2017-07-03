@@ -4,6 +4,11 @@
 [![Crates.io](https://img.shields.io/crates/v/fuse.svg)](https://crates.io/crates/fuse)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/zargony/rust-fuse/blob/master/LICENSE.md)
 
+## Feature
+
+ * rust-mount
+Using rust-mount remove libfuse.so compilation, rust-fuse in using 100% of rust
+
 ## About
 
 [Rust](http://rust-lang.org/) library for easy implementation of [FUSE](http://osxfuse.github.io) filesystems in userspace.
