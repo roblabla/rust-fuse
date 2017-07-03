@@ -85,24 +85,42 @@ const MS_NODEV  :u64 = 4;
 const FUSE_COMMFD_ENV: &str = "_FUSE_COMMFD";
 
 use sendfd::UnixSendFd;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::os::unix::net::UnixStream;
 
 fn fuse_mount_fusermount(mountpoint: &PathBuf, _: &fuse_args) -> i32
 {
-    let (sock1, sock2) = UnixStream::pair().expect("UnixStream pair panic !");
+    let (sock1, sock2) = match UnixStream::pair() {
+        Ok(res) => res,
+        Err(err) => {
+            error!("{:?}", err);
+            return -1;
+        }
+    };
+    let fd = sock2.as_raw_fd();
 
-    Command::new("fusermount")
+    unsafe {
+        libc::fcntl(fd, libc::F_SETFD, 0);
+    }
+    match Command::new("fusermount")
         .arg("-o")
         .arg("rw,nosuid,nodev,allow_other,nonempty")
         .arg("--")
         .arg(mountpoint)
-        .env(FUSE_COMMFD_ENV, format!("{}", sock2.as_raw_fd()))
-        .spawn()
-        .expect("failed to execute process");
+        .env(FUSE_COMMFD_ENV, format!("{}", fd))
+        .stdout(Stdio::inherit())
+        .spawn() {
+            Ok(_) => (),
+            Err(err) => {
+                error!("{:?}", err);
+                return -1;
+            }
+        };
 
-    return sock1.recvfd().expect("UnixStream recvfd panic !") as i32;
+    return sock1.recvfd().unwrap_or(-1);
 }
+
+use errno::errno;
 
 fn fuse_kern_mount(mountpoint: &PathBuf, args: &fuse_args) -> i32
 {
@@ -118,15 +136,16 @@ fn fuse_kern_mount(mountpoint: &PathBuf, args: &fuse_args) -> i32
     // TODO: check if help
     // TODO: get kernel/other flags options
 
-    let res = fuse_mount_sys(mountpoint, flags);
+    let mut res = fuse_mount_sys(mountpoint, flags);
     if res < 0 {
+        let err = errno().0;
+        error!("fuse_mount_sys errno: {}", err);
         // TODO: error
-        if res == libc::EPERM {
-            warn!("fuse_mount_sys no enougth permission for mount_sys");
-            return fuse_mount_fusermount(mountpoint, args);
+        if err == libc::EPERM {
+            warn!("fuse_mount_sys EPERM: backing to fusermount...");
+            res = fuse_mount_fusermount(mountpoint, args);
         } else {
-            error!("fuse_mount_sys unknown ERROR: {}", res);
-            panic!("fuse_mount_sys panic!");
+            panic!("Err {}: fuse_kern_mount panic !", err);
         }
     }
     println!("fantafs: fuse_mount_compat25: fd={}", res);

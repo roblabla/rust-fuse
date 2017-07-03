@@ -12,6 +12,7 @@ categories = ["api-bindings", "filesystem"]
 license = "MIT"
 
 [dependencies]
+errno = "0.2.3"
 libc = "0.2"
 log = "0.3"
 time = "0.1"
