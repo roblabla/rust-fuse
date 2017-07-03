@@ -27,3 +27,6 @@ env_logger = "0.3"
 [lib]
 name = "fuse"
 path = "src/lib.rs"
+
+[features]
+rust-mount = []

@@ -4,6 +4,8 @@
 
 #![allow(non_camel_case_types, missing_docs, dead_code)]
 
+use std;
+use std::path::PathBuf;
 use libc::{c_int, c_char};
 
 //
@@ -22,9 +24,115 @@ pub struct fuse_args {
 // FUSE common (see fuse_common_compat.h for details)
 //
 
-extern "system" {
-    pub fn fuse_unmount_compat22 (mountpoint: *const c_char);
+mod sys {
+    use libc::{c_int, c_char};
+    use super::fuse_args;
+    extern "system" {
+        #[cfg(not(feature="rust-mount"))]
+        pub fn fuse_mount_compat25(mountpoint: *const c_char, args: *const fuse_args) -> c_int;
+        pub fn fuse_unmount_compat22 (mountpoint: *const c_char);
+    }
 }
+
+// TODO: rust-mount
+pub use self::sys::fuse_unmount_compat22;
+
+#[cfg(feature="rust-mount")]
+pub fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> std::io::Result<i32>
+{
+    use libc::{perror, MS_NOSUID, MS_NODEV};
+
+    let flags = MS_NOSUID | MS_NODEV;
+
+// TODO: parse fuse_args
+/*
+    pub argc: c_int,
+    pub argv: *const *const c_char,
+    pub allocated: c_int,
+*/
+// TODO: check if allow_other and allow_root aren't mutually active
+// TODO: check if help
+// TODO: get kernel/other flags options
+   let fd = fuse_mount_sys(mountpoint, flags);
+   println!("fantafs: fuse_mount_compat25: fd={}", fd);
+   // TODO: ERROR
+   if fd < 0 {
+       Err(std::io::Error::last_os_error())
+   } else {
+       Ok(fd)
+   }
+}
+
+#[cfg(not(feature="rust-mount"))]
+pub fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> std::io::Result<i32>
+{
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let mnt = try!(CString::new(mountpoint.as_os_str().as_bytes()));
+    let fd = unsafe { sys::fuse_mount_compat25(mnt.as_ptr(), args) };
+    if fd < 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(fd)
+    }
+}
+
+fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64) -> i32
+{
+    use libc::{getuid, getgid, mount, c_void};
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    use std::fs::OpenOptions;
+    use std::os::unix::io::AsRawFd;
+    use std::os::unix::io::IntoRawFd;
+    // TODO:Check args
+    // TODO:Check mountpoint
+    // TODO:Check nonempty
+    // TODO:Check auto_umount
+    let mut f = OpenOptions::new().read(true).write(true).open("/dev/fuse").unwrap();
+
+
+    // TODO:Check f
+    // from:sdcard.c    sprintf(opts, "fd=%i,rootmode=40000,default_permissions,allow_other,"
+    //                                "user_id=%d,group_id=%d", fd, uid, gid);
+    let opts = format!("fd={},rootmode={},default_permissions,allow_other,user_id={},group_id={}",
+                       f.as_raw_fd(),40000,
+                       unsafe{getuid()}, unsafe{getgid()});
+    // TODO: Add kernel opt
+    // 
+    //TODO: understand:
+    /*
+	strcpy(type, mo->blkdev ? "fuseblk" : "fuse");
+	if (mo->subtype) {
+		strcat(type, ".");
+		strcat(type, mo->subtype);
+	}
+	strcpy(source,
+	       mo->fsname ? mo->fsname : (mo->subtype ? mo->subtype : devname));
+
+    */
+    info!("{}", opts);
+    let c_sources = CString::new("/dev/fuse").unwrap();
+    let c_mnt = CString::new(mountpoint.as_os_str().as_bytes()).unwrap();
+    let c_fs = CString::new("fuse").unwrap();
+    let c_opts = CString::new(opts).unwrap();
+    info!("MOUNT({:?} {:?} {:?} {:?})", c_sources, c_mnt, c_fs, c_opts);
+    let res = unsafe{
+        #[cfg(target_pointer_width = "32")]
+        let flags = flags as u32;
+        mount(c_sources.as_ptr(), c_mnt.as_ptr(), c_fs.as_ptr(), flags, c_opts.as_ptr() as *mut c_void)
+    };
+    if res < 0 {
+        // TODO: error    
+        error!("fuse_mount_sys ERROR: {}", res);
+        panic!("fuse_mount_sys panic!");
+    }
+    f.into_raw_fd()
+}
+
+
+
 
 //
 // FUSE kernel (see fuse_kernel.h for details)
