@@ -14,6 +14,7 @@ extern crate libc;
 extern crate log;
 extern crate time;
 extern crate thread_scoped;
+extern crate sendfd;
 
 use std::convert::AsRef;
 use std::io;

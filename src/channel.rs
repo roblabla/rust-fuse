@@ -82,10 +82,26 @@ fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64) -> i32
 // /usr/include/sys/mount.h
 const MS_NOSUID :u64 = 2;
 const MS_NODEV  :u64 = 4;
+const FUSE_COMMFD_ENV: &str = "_FUSE_COMMFD";
+
+use sendfd::UnixSendFd;
+use std::process::Command;
+use std::os::unix::net::UnixStream;
 
 fn fuse_mount_fusermount(mountpoint: &PathBuf, _: &fuse_args) -> i32
 {
-    return 0 // TODO:
+    let (sock1, sock2) = UnixStream::pair().expect("UnixStream pair panic !");
+
+    Command::new("fusermount")
+        .arg("-o")
+        .arg("rw,nosuid,nodev,allow_other,nonempty")
+        .arg("--")
+        .arg(mountpoint)
+        .env(FUSE_COMMFD_ENV, format!("{}", sock2.as_raw_fd()))
+        .spawn()
+        .expect("failed to execute process");
+
+    return sock1.recvfd().expect("UnixStream recvfd panic !") as i32;
 }
 
 fn fuse_kern_mount(mountpoint: &PathBuf, args: &fuse_args) -> i32
