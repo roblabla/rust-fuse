@@ -714,7 +714,7 @@ fn fuse_opt_parse(args: &fuse_args) -> Vec<String> {
     argv.iter().filter_map(|&arg| {
         if let ("-o", opt) = arg.split_at(2) {
             match opt {
-                "allow_other" | "default_permission" => {
+                "allow_other" | "default_permissions" => {
                     Some(String::from(opt))
                 }
                 _ => None
