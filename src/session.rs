@@ -182,42 +182,42 @@ cfg_if! {
         use mio::{Evented, Poll, Token, Ready, PollOpt};
         use mio::unix::EventedFd;
 
-        //!
-        //! A FuseEvented provides a way to use the FUSE filesystem in a custom event
-        //! loop. It implements the mio Evented trait, so it can be polled for
-        //! readiness.
-        //!
-        //! ```rust
-        //! # extern crate rust_fuse;
-        //! # extern crate mio;
-        //! # use rust_fuse::mount_evented;
-        //!
-        //! let FUSE: mio::Token = Token(0);
-        //! let poll = mio::Poll::new()?;
-        //! let fuse_handle = mount_evented(fs, mountpoint, &[])?;
-        //! // Start listening for incoming connections
-        //! poll.register(&fuse_handle, FUSE, mio::Ready::readable(),
-        //!               mio::PollOpt::edge())?;
-        //! // Other potential registers here
-        //! 
-        //! // Create storage for events
-        //! let mut events = mio::Events::with_capacity(1024);
-        //! loop {
-        //!     poll.poll(&mut events, None)?;
-        //! 
-        //!     for event in events.iter() {
-        //!         match event.token() {
-        //!             FUSE => {
-        //!                 fuse_handle.handle_one();
-        //!             }
-        //!             // Handle other registers
-        //!             _ => unreachable!(),
-        //!         }
-        //!     }
-        //! }
-        //! # }
-        //! ```
-        //!
+        ///
+        /// A FuseEvented provides a way to use the FUSE filesystem in a custom event
+        /// loop. It implements the mio Evented trait, so it can be polled for
+        /// readiness.
+        ///
+        /// ```rust
+        /// # extern crate rust_fuse;
+        /// # extern crate mio;
+        /// # use rust_fuse::mount_evented;
+        ///
+        /// let FUSE: mio::Token = Token(0);
+        /// let poll = mio::Poll::new()?;
+        /// let fuse_handle = mount_evented(fs, mountpoint, &[])?;
+        /// // Start listening for incoming connections
+        /// poll.register(&fuse_handle, FUSE, mio::Ready::readable(),
+        ///               mio::PollOpt::edge())?;
+        /// // Other potential registers here
+        /// 
+        /// // Create storage for events
+        /// let mut events = mio::Events::with_capacity(1024);
+        /// loop {
+        ///     poll.poll(&mut events, None)?;
+        /// 
+        ///     for event in events.iter() {
+        ///         match event.token() {
+        ///             FUSE => {
+        ///                 fuse_handle.handle_one();
+        ///             }
+        ///             // Handle other registers
+        ///             _ => unreachable!(),
+        ///         }
+        ///     }
+        /// }
+        /// # }
+        /// ```
+        ///
         // TODO: Drop
         pub struct FuseEvented<FS: Filesystem>(Session<FS>);
 

@@ -46,7 +46,7 @@ impl Channel {
         unsafe {
             let previous = libc::fcntl(self.fd, libc::F_GETFL);
             if previous == -1 {
-                return io::Error::last_os_error();
+                return Err(io::Error::last_os_error());
             }
             let new = if nonblocking {
                 previous | libc::O_NONBLOCK
@@ -54,9 +54,9 @@ impl Channel {
                 previous & !libc::O_NONBLOCK
             };
             if new != previous {
-                let err = libc::fcntl(self.fd, libc::F_SETFL, enw);
+                let err = libc::fcntl(self.fd, libc::F_SETFL, new);
                 if err == -1 {
-                    return io::Error::last_os_error();
+                    return Err(io::Error::last_os_error());
                 }
             }
             Ok(())
