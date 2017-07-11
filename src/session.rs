@@ -234,7 +234,7 @@ cfg_if! {
         }
 
         impl<FS: Filesystem> FuseEvented<FS> {
-            fn handle_one_req(&mut self, buf: &mut Vec<u8>) -> io::Result<()> {
+            pub fn handle_one_req(&mut self, buf: &mut Vec<u8>) -> io::Result<()> {
                 self.0.handle_one_req(buf)
             }
         }
