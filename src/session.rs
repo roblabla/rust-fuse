@@ -219,6 +219,7 @@ cfg_if! {
         /// ```
         ///
         // TODO: Drop
+        #[derive(Debug)]
         pub struct FuseEvented<FS: Filesystem>(Session<FS>);
 
         impl<FS: Filesystem>  Evented for FuseEvented<FS> {
