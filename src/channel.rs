@@ -40,6 +40,29 @@ impl Channel {
         })
     }
 
+    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
+        // Taken from https://github.com/rust-lang/rust/blob/6ccfe68076abc78392ab9e1d81b5c1a2123af657/src/libstd/sys/unix/fd.rs#L164
+        // Behavior should be consistent accross OSes.
+        unsafe {
+            let previous = libc::fcntl(self.fd, libc::F_GETFL);
+            if previous == -1 {
+                return io::Error::last_os_error();
+            }
+            let new = if nonblocking {
+                previous | libc::O_NONBLOCK
+            } else {
+                previous & !libc::O_NONBLOCK
+            };
+            if new != previous {
+                let err = libc::fcntl(self.fd, libc::F_SETFL, enw);
+                if err == -1 {
+                    return io::Error::last_os_error();
+                }
+            }
+            Ok(())
+        }
+    }
+
     /// Return path of the mounted filesystem
     pub fn mountpoint (&self) -> &Path {
         &self.mountpoint

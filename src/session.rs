@@ -78,7 +78,11 @@ impl<FS: Filesystem> Session<FS> {
         Ok(())
     }
 
+    /// Returns an asynchronous rust session that can run in a custom event
+    /// loop. The file descriptor is set to nonblocking to ensure it works
+    /// correctly from tokio.
     pub fn evented(self) -> io::Result<FuseEvented<FS>> {
+        self.ch.set_nonblocking(true);
         Ok(FuseEvented(self))
     }
 
@@ -230,7 +234,7 @@ cfg_if! {
         }
 
         impl<FS: Filesystem> FuseEvented<FS> {
-            fn handle_one(&mut self, buf: &mut Vec<u8>) -> io::Result<()> {
+            fn handle_one_req(&mut self, buf: &mut Vec<u8>) -> io::Result<()> {
                 self.0.handle_one_req(buf)
             }
         }
