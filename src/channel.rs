@@ -24,7 +24,7 @@ fn with_fuse_args<T, F: FnOnce(&fuse_args) -> T> (options: &[&OsStr], f: F) -> T
 #[derive(Debug)]
 pub struct Channel {
     mountpoint: PathBuf,
-    fd: c_int,
+    pub fd: c_int,
 }
 
 impl Channel {
