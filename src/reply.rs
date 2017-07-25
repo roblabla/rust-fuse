@@ -55,6 +55,18 @@ fn as_bytes<T, U, F: FnOnce(&[&[u8]]) -> U> (data: &T, f: F) -> U {
     }
 }
 
+fn as_bytes_single<T, U, F: FnOnce(Option<&[u8]>) -> U> (data: &T, f: F) -> U {
+    let len = mem::size_of::<T>();
+    match len {
+        0 => f(None),
+        len => {
+            let p = data as *const T as *const u8;
+            let bytes = unsafe { slice::from_raw_parts(p, len) };
+            f(Some(bytes))
+        },
+    }
+}
+
 // Some platforms like Linux x86_64 have mode_t = u32, and lint warns of a trivial_numeric_casts.
 // But others like MacOS x86_64 have mode_t = u16, requiring a typecast.  So, just silence lint.
 #[allow(trivial_numeric_casts)]
@@ -156,10 +168,33 @@ impl<T> ReplyRaw<T> {
         });
     }
 
+    fn send_single (&mut self, err: c_int, bytes: &[u8]) {
+        assert!(self.sender.is_some());
+        let len = bytes.len();
+        let header = fuse_out_header {
+            len: (mem::size_of::<fuse_out_header>() + len) as u32,
+            error: -err,
+            unique: self.unique,
+        };
+        as_bytes_single(&header, |headerbytes| {
+            let sender = self.sender.take().unwrap();
+            if let Some(headerbytes_single) = headerbytes {
+                let sendbytes = [headerbytes_single, bytes];
+                sender.send(&sendbytes);
+            } else {
+                sender.send(&[&bytes]);
+            }
+        });
+    }
+
     /// Reply to a request with the given type
     pub fn ok (mut self, data: &T) {
-        as_bytes(data, |bytes| {
-            self.send(0, bytes);
+        as_bytes_single(data, |bytes| {
+            if let Some(bytes_single) = bytes {
+                self.send_single(0, bytes_single);
+            } else {
+                self.send(0, &[]);
+            }
         })
     }
 
