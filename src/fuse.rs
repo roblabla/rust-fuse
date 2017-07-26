@@ -713,8 +713,19 @@ fn fuse_opt_parse(args: &fuse_args) -> Vec<String> {
 
     argv.iter().filter_map(|&arg| {
         if let ("-o", opt) = arg.split_at(2) {
-            match opt {
-                "allow_other" | "default_permissions" => {
+            let opt_name_len = opt.find('=').unwrap_or(opt.len());
+            let (pattern, _) = opt.split_at(opt_name_len);
+            match pattern {
+                    "allow_other" 
+                        | "default_permissions"
+                        | "rootmode"
+                        | "blkdev"
+                        | "blksize"
+                        | "max_read"
+                        | "fd"
+                        | "user_id"
+                        | "fsname"
+                        | "subtype" => {
                     Some(String::from(opt))
                 }
                 _ => None
