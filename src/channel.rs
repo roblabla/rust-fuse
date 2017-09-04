@@ -7,11 +7,12 @@ use std::ffi::{CString, CStr, OsStr};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{PathBuf, Path};
 use libc::{self, c_int, c_void, size_t};
-use fuse::{fuse_args, fuse_mount_compat25};
+use fuse::fuse_args;
 use reply::ReplySender;
 
 /// Helper function to provide options as a fuse_args struct
 /// (which contains an argc count and an argv pointer)
+
 fn with_fuse_args<T, F: FnOnce(&fuse_args) -> T> (options: &[&OsStr], f: F) -> T {
     let mut args = vec![CString::new("rust-fuse").unwrap()];
     args.extend(options.iter().map(|s| CString::new(s.as_bytes()).unwrap()));
@@ -26,6 +27,8 @@ pub struct Channel {
     fd: c_int,
 }
 
+use fuse::fuse_mount_compat25;
+
 impl Channel {
     /// Create a new communication channel to the kernel driver by mounting the
     /// given path. The kernel driver will delegate filesystem operations of
@@ -34,8 +37,7 @@ impl Channel {
     pub fn new (mountpoint: &Path, options: &[&OsStr]) -> io::Result<Channel> {
         let mountpoint = try!(mountpoint.canonicalize());
         with_fuse_args(options, |args| {
-            let mnt = try!(CString::new(mountpoint.as_os_str().as_bytes()));
-            let fd = unsafe { fuse_mount_compat25(mnt.as_ptr(), args) };
+            let fd = fuse_mount_compat25(&mountpoint, args)?;
             if fd < 0 {
                 Err(io::Error::last_os_error())
             } else {
@@ -127,18 +129,11 @@ pub fn unmount (mountpoint: &Path) -> io::Result<()> {
     #[cfg(not(any(target_os = "macos", target_os = "freebsd", target_os = "dragonfly",
                   target_os = "openbsd", target_os = "bitrig", target_os = "netbsd")))] #[inline]
     fn libc_umount (mnt: &CStr) -> c_int {
-        use fuse::fuse_unmount_compat22;
-        use std::io::ErrorKind::PermissionDenied;
 
+        // TODO: Recode fuse_unmount_compat22 in pure rust.
+        // This impl might not work if the process calling umount is not root.
         let rc = unsafe { libc::umount(mnt.as_ptr()) };
-        if rc < 0 && io::Error::last_os_error().kind() == PermissionDenied {
-            // Linux always returns EPERM for non-root users.  We have to let the
-            // library go through the setuid-root "fusermount -u" to unmount.
-            unsafe { fuse_unmount_compat22(mnt.as_ptr()); }
-            0
-        } else {
-            rc
-        }
+        rc
     }
 
     let mnt = try!(CString::new(mountpoint.as_os_str().as_bytes()));

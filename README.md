@@ -4,6 +4,11 @@
 [![Crates.io](https://img.shields.io/crates/v/fuse.svg)](https://crates.io/crates/fuse)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/zargony/rust-fuse/blob/master/LICENSE.md)
 
+## Feature
+
+ * rust-mount
+Using rust-mount remove libfuse.so compilation, rust-fuse in using 100% of rust
+
 ## About
 
 [Rust](http://rust-lang.org/) library for easy implementation of [FUSE](http://osxfuse.github.io) filesystems in userspace.
@@ -32,7 +37,7 @@ Put this in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-fuse = "0.2"
+fuse = "0.3"
 ```
 
 and in your crate root:
@@ -59,6 +64,11 @@ There's still a lot of stuff to be done. Feel free to contribute.
 - An additional more high level API would be nice. It should provide pathnames instead inode numbers and automatically handle concurrency and interruption (like the FUSE C library's high level API).
 
 In general, see the [list of issues](https://github.com/zargony/rust-fuse/issues) on GitHub and search the source files for comments containing "TODO" or "FIXME" to see what's still missing.
+
+### Android
+
+- You will provide arm version of libfuse.so in $NDK_HOME/platforms/android-18/arch-arm/usr/lib/
+- Replace android-18 by anything you want
 
 ## Compatibility
 

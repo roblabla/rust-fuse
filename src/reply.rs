@@ -14,7 +14,7 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::marker::PhantomData;
 use std::os::unix::ffi::OsStrExt;
-use libc::{c_int, S_IFIFO, S_IFCHR, S_IFBLK, S_IFDIR, S_IFREG, S_IFLNK, EIO};
+use libc::{c_int, S_IFIFO, S_IFCHR, S_IFBLK, S_IFDIR, S_IFREG, S_IFLNK, S_IFSOCK, EIO};
 use time::Timespec;
 use fuse::{fuse_attr, fuse_kstatfs, fuse_file_lock, fuse_entry_out, fuse_attr_out};
 use fuse::{fuse_open_out, fuse_write_out, fuse_statfs_out, fuse_lk_out, fuse_bmap_out};
@@ -55,6 +55,18 @@ fn as_bytes<T, U, F: FnOnce(&[&[u8]]) -> U> (data: &T, f: F) -> U {
     }
 }
 
+fn as_bytes_single<T, U, F: FnOnce(Option<&[u8]>) -> U> (data: &T, f: F) -> U {
+    let len = mem::size_of::<T>();
+    match len {
+        0 => f(None),
+        len => {
+            let p = data as *const T as *const u8;
+            let bytes = unsafe { slice::from_raw_parts(p, len) };
+            f(Some(bytes))
+        },
+    }
+}
+
 // Some platforms like Linux x86_64 have mode_t = u32, and lint warns of a trivial_numeric_casts.
 // But others like MacOS x86_64 have mode_t = u16, requiring a typecast.  So, just silence lint.
 #[allow(trivial_numeric_casts)]
@@ -67,6 +79,7 @@ fn mode_from_kind_and_perm (kind: FileType, perm: u16) -> u32 {
         FileType::Directory => S_IFDIR,
         FileType::RegularFile => S_IFREG,
         FileType::Symlink => S_IFLNK,
+        FileType::Socket => S_IFSOCK,
     }) as u32 | perm as u32
 }
 
@@ -155,10 +168,33 @@ impl<T> ReplyRaw<T> {
         });
     }
 
+    fn send_single (&mut self, err: c_int, bytes: &[u8]) {
+        assert!(self.sender.is_some());
+        let len = bytes.len();
+        let header = fuse_out_header {
+            len: (mem::size_of::<fuse_out_header>() + len) as u32,
+            error: -err,
+            unique: self.unique,
+        };
+        as_bytes_single(&header, |headerbytes| {
+            let sender = self.sender.take().unwrap();
+            if let Some(headerbytes_single) = headerbytes {
+                let sendbytes = [headerbytes_single, bytes];
+                sender.send(&sendbytes);
+            } else {
+                sender.send(&[&bytes]);
+            }
+        });
+    }
+
     /// Reply to a request with the given type
     pub fn ok (mut self, data: &T) {
-        as_bytes(data, |bytes| {
-            self.send(0, bytes);
+        as_bytes_single(data, |bytes| {
+            if let Some(bytes_single) = bytes {
+                self.send_single(0, bytes_single);
+            } else {
+                self.send(0, &[]);
+            }
         })
     }
 
