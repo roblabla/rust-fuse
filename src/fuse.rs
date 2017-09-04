@@ -554,7 +554,7 @@ mod sys {
 
 
 #[cfg(feature="rust-mount")]
-fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64) -> i32
+fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64, mnt_opts: &Vec<String>) -> i32
 {
     // TODO:Check args
     // TODO:Check mountpoint
@@ -566,8 +566,9 @@ fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64) -> i32
     // TODO:Check f
     // from:sdcard.c    sprintf(opts, "fd=%i,rootmode=40000,default_permissions,allow_other,"
     //                                "user_id=%d,group_id=%d", fd, uid, gid);
-    let opts = format!("fd={},rootmode={},default_permissions,allow_other,user_id={},group_id={}",
+    let opts = format!("fd={},rootmode={},{},user_id={},group_id={}",
                        f.as_raw_fd(),40000,
+                       mnt_opts.join(","),
                        unsafe{getuid()}, unsafe{getgid()});
     // TODO: Add kernel opt
     // 
@@ -616,7 +617,7 @@ use libc::{self, c_void};
 use errno::errno;
 
 #[cfg(feature="rust-mount")]
-fn fuse_mount_fusermount(mountpoint: &PathBuf, _: &fuse_args) -> i32
+fn fuse_mount_fusermount(mountpoint: &PathBuf, _: &fuse_args, mnt_opts: Vec<String>) -> i32
 {
     let (sock1, sock2) = match UnixStream::pair() {
         Ok(res) => res,
@@ -632,7 +633,7 @@ fn fuse_mount_fusermount(mountpoint: &PathBuf, _: &fuse_args) -> i32
     }
     match Command::new("fusermount")
         .arg("-o")
-        .arg("rw,nosuid,nodev,allow_other,nonempty")
+        .arg(mnt_opts.join(","))
         .arg("--")
         .arg(mountpoint)
         .env(FUSE_COMMFD_ENV, format!("{}", fd))
@@ -649,34 +650,34 @@ fn fuse_mount_fusermount(mountpoint: &PathBuf, _: &fuse_args) -> i32
 }
 
 #[cfg(feature="rust-mount")]
+use std::slice;
+#[cfg(feature="rust-mount")]
+use std::ffi::CStr;
+
+#[cfg(feature="rust-mount")]
 fn fuse_kern_mount(mountpoint: &PathBuf, args: &fuse_args) -> i32
 {
     let flags = MS_NOSUID | MS_NODEV;
+    let mnt_opts = fuse_opt_parse(args);
+    info!("Send opts: {}", mnt_opts.join(","));
 
-    // TODO: parse fuse_args
-    /*
-       pub argc: c_int,
-       pub argv: *const *const c_char,
-       pub allocated: c_int,
-       */
     // TODO: check if allow_other and allow_root aren't mutually active
     // TODO: check if help
     // TODO: get kernel/other flags options
 
-    let mut res = fuse_mount_sys(mountpoint, flags);
+    let mut res = fuse_mount_sys(mountpoint, flags, &mnt_opts);
     if res < 0 {
         let err = errno().0;
         error!("fuse_mount_sys errno: {}", err);
         // TODO: error
         if err == libc::EPERM {
             warn!("fuse_mount_sys EPERM: backing to fusermount...");
-            res = fuse_mount_fusermount(mountpoint, args);
+            res = fuse_mount_fusermount(mountpoint, args, mnt_opts);
         } else {
             panic!("Err {}: fuse_kern_mount panic !", err);
         }
     }
-    println!("fantafs: fuse_mount_compat25: fd={}", res);
-    // TODO: ERROR
+    info!("fantafs: fuse_mount_compat25: fd={}", res);
     res
 }
 
@@ -699,4 +700,38 @@ pub fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> std::io::R
     } else {
         Ok(fd)
     }
+}
+
+#[cfg(feature="rust-mount")]
+fn fuse_opt_parse(args: &fuse_args) -> Vec<String> {
+    let argv: Vec<&str> = unsafe {
+        let paths: &[*const _] = slice::from_raw_parts(args.argv, args.argc as usize);
+        paths.iter().map(
+                |cs| CStr::from_ptr(*cs).to_str().expect("Error convert argv")
+            ).collect()
+    };
+
+    argv.iter().filter_map(|&arg| {
+        if let ("-o", opt) = arg.split_at(2) {
+            let opt_name_len = opt.find('=').unwrap_or(opt.len());
+            let (pattern, _) = opt.split_at(opt_name_len);
+            match pattern {
+                    "allow_other" 
+                        | "default_permissions"
+                        | "rootmode"
+                        | "blkdev"
+                        | "blksize"
+                        | "max_read"
+                        | "fd"
+                        | "user_id"
+                        | "fsname"
+                        | "subtype" => {
+                    Some(String::from(opt))
+                }
+                _ => None
+            }
+        } else {
+            None
+        }
+    }).collect()
 }
