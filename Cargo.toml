@@ -14,19 +14,22 @@ version = "0.3.0"
 
 [dependencies]
 cfg-if = "0.1.2"
-errno = "0.2.3"
+errno  = "0.2.3"
 libc = "0.2"
-log = "0.3"
+log  = "0.3"
 sendfd = "0.1.0"
 thread-scoped = "1"
 time = "0.1"
-getopts = "0.2.15"
+
+#rust-mount dependencie
+getopts = { version = "0.2.15", optional = true }
 
 [dev-dependencies]
 env_logger = "0.3"
 
 [features]
-rust-mount = []
+default = []
+rust-mount = ["getopts"]
 
 [lib]
 name = "fuse"
