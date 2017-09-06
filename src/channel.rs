@@ -7,7 +7,7 @@ use std::ffi::{CString, CStr, OsStr};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{PathBuf, Path};
 use libc::{self, c_int, c_void, size_t};
-use fuse::fuse_args;
+use fuse_opts::fuse_args;
 use reply::ReplySender;
 
 /// Helper function to provide options as a fuse_args struct

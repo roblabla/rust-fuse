@@ -10,15 +10,20 @@
 #![warn(missing_docs, bad_style, unused, unused_extern_crates, unused_import_braces, unused_qualifications, missing_debug_implementations)]
 
 extern crate libc;
-#[cfg(feature="rust-mount")]
-extern crate errno;
-#[cfg(feature="rust-mount")]
-extern crate sendfd;
 
 #[macro_use]
 extern crate log;
 extern crate time;
 extern crate thread_scoped;
+#[macro_use]
+extern crate cfg_if;
+cfg_if! {
+    if #[cfg(feature="rust-mount")] {
+        extern crate errno;
+        extern crate sendfd;
+        extern crate getopts;
+    }
+}
 
 use std::convert::AsRef;
 use std::io;
@@ -37,6 +42,8 @@ pub use reply::ReplyXTimes;
 pub use request::Request;
 pub use session::{Session, BackgroundSession};
 
+#[macro_use]
+mod fuse_opts;
 mod argument;
 mod channel;
 mod fuse;
