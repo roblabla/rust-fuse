@@ -542,26 +542,17 @@ mod sys {
 }
 
 #[cfg(feature="rust-mount")]
-fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64, mnt_opts: &mut FuseOpts) -> i32
+fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64, mnt_opts: &FuseOpts) -> i32
 {
-    // TODO:Check args
     // TODO:Check mountpoint
     // TODO:Check nonempty
     // TODO:Check auto_umount
     let f = OpenOptions::new().read(true).write(true).open("/dev/fuse").unwrap();
 
-    if let None = get_opt!(Uid, mnt_opts) {
-        mnt_opts.add_opt(MetaFuseOpt::Uid(unsafe{getuid()}));
-    }
-    if let None = get_opt!(Gid, mnt_opts) {
-        mnt_opts.add_opt(MetaFuseOpt::Gid(unsafe{getgid()}));
-    }
-    if let None = get_opt!(RootMode, mnt_opts) {
-        mnt_opts.add_opt(MetaFuseOpt::RootMode(40755));
-    }
     let opts = format!("fd={},{}",
                        f.as_raw_fd(),
                        mnt_opts.to_string());
+    info!("{}", opts);
     // TODO: Add kernel opt
     // 
     //TODO: understand:
@@ -574,7 +565,6 @@ fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64, mnt_opts: &mut FuseOpts) -> 
 	strcpy(source,
 	       mo->fsname ? mo->fsname : (mo->subtype ? mo->subtype : devname));
     */
-    info!("{}", opts);
     let c_sources = CString::new("/dev/fuse").unwrap();
     let c_mnt = CString::new(mountpoint.as_os_str().as_bytes()).unwrap();
     let c_fs = CString::new("fuse").unwrap();
@@ -648,11 +638,20 @@ fn fuse_kern_mount(mountpoint: &PathBuf, args: &fuse_args) -> i32
     let mut mnt_opts = FuseOpts::new();
     mnt_opts.fuse_opt_parse(args);
 
+    if let None = get_opt!(Uid, mnt_opts) {
+        mnt_opts.add_opt(MetaFuseOpt::Uid(unsafe{getuid()}));
+    }
+    if let None = get_opt!(Gid, mnt_opts) {
+        mnt_opts.add_opt(MetaFuseOpt::Gid(unsafe{getgid()}));
+    }
+    if let None = get_opt!(RootMode, mnt_opts) {
+        mnt_opts.add_opt(MetaFuseOpt::RootMode(40755));
+    }
     // TODO: check if allow_other and allow_root aren't mutually active
     // TODO: check if help
     // TODO: get kernel/other flags options
 
-    let mut res = fuse_mount_sys(mountpoint, flags, &mut mnt_opts);
+    let mut res = fuse_mount_sys(mountpoint, flags, &mnt_opts);
     if res < 0 {
         let err = errno().0;
         error!("fuse_mount_sys errno: {}", err);
