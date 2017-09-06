@@ -76,6 +76,22 @@ cfg_if! {
             }
         }
 
+        //
+        // fn get_get(type: ident, tab: FuseOpts) -> Option<ident::value>
+        // 
+        macro_rules! get_opt {
+            ($type: ident, $tab: expr) => {{
+                let mut res = None;
+                for i in $tab.opts.iter().rev() {
+                    if let MetaFuseOpt::$type(v) = *i {
+                        res = Some(v);
+                        break ;
+                    }
+                }
+                res
+            }}
+        }
+
         pub struct FuseOpts {
             pub opts: Vec<MetaFuseOpt>,
         }
@@ -91,6 +107,10 @@ cfg_if! {
                 FuseOpts {
                     opts: Vec::new(),
                 }
+            }
+
+            pub fn add_opt(&mut self, opt: MetaFuseOpt) {
+                self.opts.push(opt);
             }
 
             pub fn fuse_opt_parse(&mut self, args: &fuse_args) {

@@ -42,13 +42,14 @@ pub use reply::ReplyXTimes;
 pub use request::Request;
 pub use session::{Session, BackgroundSession};
 
+#[macro_use]
+mod fuse_opts;
 mod argument;
 mod channel;
 mod fuse;
 mod reply;
 mod request;
 mod session;
-mod fuse_opts;
 
 /// File types
 #[derive(Clone, Copy, Debug, Hash, PartialEq)]

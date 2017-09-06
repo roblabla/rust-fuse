@@ -6,7 +6,7 @@
 
 use fuse_opts::fuse_args;
 #[cfg(feature="rust-mount")]
-use fuse_opts::FuseOpts;
+use fuse_opts::{FuseOpts, MetaFuseOpt};
 //
 // FUSE kernel (see fuse_kernel.h for details)
 //
@@ -542,7 +542,7 @@ mod sys {
 }
 
 #[cfg(feature="rust-mount")]
-fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64, mnt_opts: &FuseOpts) -> i32
+fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64, mnt_opts: &mut FuseOpts) -> i32
 {
     // TODO:Check args
     // TODO:Check mountpoint
@@ -550,13 +550,17 @@ fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64, mnt_opts: &FuseOpts) -> i32
     // TODO:Check auto_umount
     let f = OpenOptions::new().read(true).write(true).open("/dev/fuse").unwrap();
 
-    // TODO:Check f
-    // from:sdcard.c    sprintf(opts, "fd=%i,rootmode=40000,default_permissions,allow_other,"
-    //                                "user_id=%d,group_id=%d", fd, uid, gid);
-    
-    let opts = format!("fd={},user_id={},group_id={},{}",
+    if let None = get_opt!(Uid, mnt_opts) {
+        mnt_opts.add_opt(MetaFuseOpt::Uid(unsafe{getuid()}));
+    }
+    if let None = get_opt!(Gid, mnt_opts) {
+        mnt_opts.add_opt(MetaFuseOpt::Gid(unsafe{getgid()}));
+    }
+    if let None = get_opt!(RootMode, mnt_opts) {
+        mnt_opts.add_opt(MetaFuseOpt::RootMode(40755));
+    }
+    let opts = format!("fd={},{}",
                        f.as_raw_fd(),
-                       unsafe{getuid()}, unsafe{getgid()},
                        mnt_opts.to_string());
     // TODO: Add kernel opt
     // 
@@ -648,7 +652,7 @@ fn fuse_kern_mount(mountpoint: &PathBuf, args: &fuse_args) -> i32
     // TODO: check if help
     // TODO: get kernel/other flags options
 
-    let mut res = fuse_mount_sys(mountpoint, flags, &mnt_opts);
+    let mut res = fuse_mount_sys(mountpoint, flags, &mut mnt_opts);
     if res < 0 {
         let err = errno().0;
         error!("fuse_mount_sys errno: {}", err);
