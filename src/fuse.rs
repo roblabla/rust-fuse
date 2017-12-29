@@ -688,6 +688,11 @@ pub fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> std::io::R
 }
 
 #[cfg(feature="rust-mount")]
+use std::ffi::CStr;
+#[cfg(feature="rust-mount")]
+use std::slice;
+
+#[cfg(feature="rust-mount")]
 fn fuse_opt_parse(args: &fuse_args) -> Vec<String> {
     let argv: Vec<&str> = unsafe {
         let paths: &[*const _] = slice::from_raw_parts(args.argv, args.argc as usize);
