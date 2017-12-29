@@ -686,3 +686,37 @@ pub fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> std::io::R
         Ok(fd)
     }
 }
+
+#[cfg(feature="rust-mount")]
+fn fuse_opt_parse(args: &fuse_args) -> Vec<String> {
+    let argv: Vec<&str> = unsafe {
+        let paths: &[*const _] = slice::from_raw_parts(args.argv, args.argc as usize);
+        paths.iter().map(
+                |cs| CStr::from_ptr(*cs).to_str().expect("Error convert argv")
+            ).collect()
+    };
+
+    argv.iter().filter_map(|&arg| {
+        if let ("-o", opt) = arg.split_at(2) {
+            let opt_name_len = opt.find('=').unwrap_or(opt.len());
+            let (pattern, _) = opt.split_at(opt_name_len);
+            match pattern {
+                    "allow_other" 
+                        | "default_permissions"
+                        | "rootmode"
+                        | "blkdev"
+                        | "blksize"
+                        | "max_read"
+                        | "fd"
+                        | "user_id"
+                        | "fsname"
+                        | "subtype" => {
+                    Some(String::from(opt))
+                }
+                _ => None
+            }
+        } else {
+            None
+        }
+    }).collect()
+}
