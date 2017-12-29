@@ -8,6 +8,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::{PathBuf, Path};
 use libc::{self, c_int, c_void, size_t};
 use fuse_opts::fuse_args;
+use fuse::fuse_mount_compat25;
 use reply::ReplySender;
 
 /// Helper function to provide options as a fuse_args struct
@@ -24,10 +25,8 @@ fn with_fuse_args<T, F: FnOnce(&fuse_args) -> T> (options: &[&OsStr], f: F) -> T
 #[derive(Debug)]
 pub struct Channel {
     mountpoint: PathBuf,
-    fd: c_int,
+    pub fd: c_int,
 }
-
-use fuse::fuse_mount_compat25;
 
 impl Channel {
     /// Create a new communication channel to the kernel driver by mounting the
@@ -44,6 +43,29 @@ impl Channel {
                 Ok(Channel { mountpoint: mountpoint, fd: fd })
             }
         })
+    }
+
+    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
+        // Taken from https://github.com/rust-lang/rust/blob/6ccfe68076abc78392ab9e1d81b5c1a2123af657/src/libstd/sys/unix/fd.rs#L164
+        // Behavior should be consistent accross OSes.
+        unsafe {
+            let previous = libc::fcntl(self.fd, libc::F_GETFL);
+            if previous == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            let new = if nonblocking {
+                previous | libc::O_NONBLOCK
+            } else {
+                previous & !libc::O_NONBLOCK
+            };
+            if new != previous {
+                let err = libc::fcntl(self.fd, libc::F_SETFL, new);
+                if err == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+            }
+            Ok(())
+        }
     }
 
     /// Return path of the mounted filesystem

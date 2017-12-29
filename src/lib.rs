@@ -24,6 +24,8 @@ cfg_if! {
         extern crate getopts;
     }
 }
+#[cfg(feature = "mio")]
+extern crate mio;
 
 use std::convert::AsRef;
 use std::io;
@@ -41,6 +43,8 @@ pub use reply::ReplyXattr;
 pub use reply::ReplyXTimes;
 pub use request::Request;
 pub use session::{Session, BackgroundSession};
+#[cfg(feature = "mio")]
+pub use session::FuseEvented;
 
 #[macro_use]
 mod fuse_opts;
@@ -399,4 +403,9 @@ pub fn mount<FS: Filesystem, P: AsRef<Path>> (filesystem: FS, mountpoint: &P, op
 /// be unmounted.
 pub unsafe fn spawn_mount<'a, FS: Filesystem+Send+'a, P: AsRef<Path>> (filesystem: FS, mountpoint: &P, options: &[&OsStr]) -> io::Result<BackgroundSession<'a>> {
     Session::new(filesystem, mountpoint.as_ref(), options).and_then(|se| se.spawn())
+}
+
+#[cfg(feature = "mio")]
+pub fn mount_evented<FS: Filesystem, P: AsRef<Path>> (filesystem: FS, mountpoint: &P, options: &[&OsStr]) -> io::Result<FuseEvented<FS>> {
+    Session::new(filesystem, mountpoint.as_ref(), options).and_then(|se| se.evented())
 }
