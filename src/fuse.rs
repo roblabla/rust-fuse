@@ -5,8 +5,13 @@
 #![allow(non_camel_case_types, missing_docs, dead_code)]
 
 use fuse_opts::fuse_args;
-#[cfg(feature="rust-mount")]
-use fuse_opts::{FuseOpts, MetaFuseOpt};
+cfg_if! {
+    if #[cfg(feature="rust-mount")] {
+        use fuse_opts::{FuseOpts, MetaFuseOpt};
+        use std::ffi::CStr;
+        use std::slice;
+    }
+}
 //
 // FUSE kernel (see fuse_kernel.h for details)
 //
@@ -587,91 +592,120 @@ const MS_NOSUID :u64 = 2;
 const MS_NODEV  :u64 = 4;
 const FUSE_COMMFD_ENV: &str = "_FUSE_COMMFD";
 
-#[cfg(feature="rust-mount")]
-use sendfd::UnixSendFd;
-#[cfg(feature="rust-mount")]
-use std::process::{Command, Stdio};
-#[cfg(feature="rust-mount")]
-use std::os::unix::net::UnixStream;
-#[cfg(feature="rust-mount")]
-use libc::{self, c_void};
-#[cfg(feature="rust-mount")]
-use errno::errno;
+cfg_if! {
+    if #[cfg(feature = "rust-mount")] {
+        use sendfd::UnixSendFd;
+        use std::process::{Command, Stdio};
+        use std::os::unix::net::UnixStream;
+        use libc::{self, c_void};
+        use errno::errno;
 
-#[cfg(feature="rust-mount")]
-fn fuse_mount_fusermount(mountpoint: &PathBuf, _: &fuse_args, mnt_opts: &FuseOpts) -> i32
-{
-    let (sock1, sock2) = match UnixStream::pair() {
-        Ok(res) => res,
-        Err(err) => {
-            error!("{:?}", err);
-            return -1;
-        }
-    };
-    let fd = sock2.as_raw_fd();
+        fn fuse_mount_fusermount(mountpoint: &PathBuf, _: &fuse_args, mnt_opts: &FuseOpts) -> i32
+        {
+            let (sock1, sock2) = match UnixStream::pair() {
+                Ok(res) => res,
+                Err(err) => {
+                    error!("{:?}", err);
+                    return -1;
+                }
+            };
+            let fd = sock2.as_raw_fd();
 
-    unsafe {
-        libc::fcntl(fd, libc::F_SETFD, 0);
-    }
-    match Command::new("fusermount")
-        .arg("-o")
-        .arg(mnt_opts.to_string())
-        .arg("--")
-        .arg(mountpoint)
-        .env(FUSE_COMMFD_ENV, format!("{}", fd))
-        .stdout(Stdio::inherit())
-        .spawn() {
-            Ok(_) => (),
-            Err(err) => {
-                error!("{:?}", err);
-                return -1;
+            unsafe {
+                libc::fcntl(fd, libc::F_SETFD, 0);
             }
-        };
+            match Command::new("fusermount")
+                .arg("-o")
+                .arg(mnt_opts.to_string())
+                .arg("--")
+                .arg(mountpoint)
+                .env(FUSE_COMMFD_ENV, format!("{}", fd))
+                .stdout(Stdio::inherit())
+                .spawn() {
+                    Ok(_) => (),
+                    Err(err) => {
+                        error!("{:?}", err);
+                        return -1;
+                    }
+                };
 
-    return sock1.recvfd().unwrap_or(-1);
-}
+            return sock1.recvfd().unwrap_or(-1);
+        }
 
-#[cfg(feature="rust-mount")]
-fn fuse_kern_mount(mountpoint: &PathBuf, args: &fuse_args) -> i32
-{
-    let flags = MS_NOSUID | MS_NODEV;
-    let mut mnt_opts = FuseOpts::new();
-    mnt_opts.fuse_opt_parse(args);
+        fn fuse_kern_mount(mountpoint: &PathBuf, args: &fuse_args) -> i32
+        {
+            let flags = MS_NOSUID | MS_NODEV;
+            let mut mnt_opts = FuseOpts::new();
+            mnt_opts.fuse_opt_parse(args);
 
-    if let None = get_opt!(Uid, mnt_opts) {
-        mnt_opts.add_opt(MetaFuseOpt::Uid(unsafe{getuid()}));
-    }
-    if let None = get_opt!(Gid, mnt_opts) {
-        mnt_opts.add_opt(MetaFuseOpt::Gid(unsafe{getgid()}));
-    }
-    if let None = get_opt!(RootMode, mnt_opts) {
-        mnt_opts.add_opt(MetaFuseOpt::RootMode(40755));
-    }
-    // TODO: check if allow_other and allow_root aren't mutually active
-    // TODO: check if help
-    // TODO: get kernel/other flags options
+            if let None = get_opt!(Uid, mnt_opts) {
+                mnt_opts.add_opt(MetaFuseOpt::Uid(unsafe{getuid()}));
+            }
+            if let None = get_opt!(Gid, mnt_opts) {
+                mnt_opts.add_opt(MetaFuseOpt::Gid(unsafe{getgid()}));
+            }
+            if let None = get_opt!(RootMode, mnt_opts) {
+                mnt_opts.add_opt(MetaFuseOpt::RootMode(40755));
+            }
+            // TODO: check if allow_other and allow_root aren't mutually active
+            // TODO: check if help
+            // TODO: get kernel/other flags options
 
-    let mut res = fuse_mount_sys(mountpoint, flags, &mnt_opts);
-    if res < 0 {
-        let err = errno().0;
-        error!("fuse_mount_sys errno: {}", err);
-        // TODO: error
-        if err == libc::EPERM {
-            warn!("fuse_mount_sys EPERM: backing to fusermount...");
-            res = fuse_mount_fusermount(mountpoint, args, &mnt_opts);
-        } else {
-            panic!("Err {}: fuse_kern_mount panic !", err);
+            let mut res = fuse_mount_sys(mountpoint, flags, &mnt_opts);
+            if res < 0 {
+                let err = errno().0;
+                error!("fuse_mount_sys errno: {}", err);
+                // TODO: error
+                if err == libc::EPERM {
+                    warn!("fuse_mount_sys EPERM: backing to fusermount...");
+                    res = fuse_mount_fusermount(mountpoint, args, &mnt_opts);
+                } else {
+                    panic!("Err {}: fuse_kern_mount panic !", err);
+                }
+            }
+            info!("fantafs: fuse_mount_compat25: fd={}", res);
+            res
+        }
+
+        fn fuse_opt_parse(args: &fuse_args) -> Vec<String> {
+            let argv: Vec<&str> = unsafe {
+                let paths: &[*const _] = slice::from_raw_parts(args.argv, args.argc as usize);
+                paths.iter().map(
+                    |cs| CStr::from_ptr(*cs).to_str().expect("Error convert argv")
+                    ).collect()
+            };
+
+            argv.iter().filter_map(|&arg| {
+                if let ("-o", opt) = arg.split_at(2) {
+                    let opt_name_len = opt.find('=').unwrap_or(opt.len());
+                    let (pattern, _) = opt.split_at(opt_name_len);
+                    match pattern {
+                        "allow_other" 
+                            | "default_permissions"
+                            | "rootmode"
+                            | "blkdev"
+                            | "blksize"
+                            | "max_read"
+                            | "fd"
+                            | "user_id"
+                            | "fsname"
+                            | "subtype" => {
+                                Some(String::from(opt))
+                            }
+                        _ => None
+                    }
+                } else {
+                    None
+                }
+            }).collect()
+        }
+
+        pub fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> std::io::Result<i32>
+        {
+            Ok(fuse_kern_mount(mountpoint, args))
         }
     }
-    info!("fantafs: fuse_mount_compat25: fd={}", res);
-    res
 }
-#[cfg(feature="rust-mount")]
-pub fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> std::io::Result<i32>
-{
-    Ok(fuse_kern_mount(mountpoint, args))
-}
-
 #[cfg(not(feature="rust-mount"))]
 pub fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> std::io::Result<i32>
 {
@@ -685,43 +719,4 @@ pub fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> std::io::R
     } else {
         Ok(fd)
     }
-}
-
-#[cfg(feature="rust-mount")]
-use std::ffi::CStr;
-#[cfg(feature="rust-mount")]
-use std::slice;
-
-#[cfg(feature="rust-mount")]
-fn fuse_opt_parse(args: &fuse_args) -> Vec<String> {
-    let argv: Vec<&str> = unsafe {
-        let paths: &[*const _] = slice::from_raw_parts(args.argv, args.argc as usize);
-        paths.iter().map(
-                |cs| CStr::from_ptr(*cs).to_str().expect("Error convert argv")
-            ).collect()
-    };
-
-    argv.iter().filter_map(|&arg| {
-        if let ("-o", opt) = arg.split_at(2) {
-            let opt_name_len = opt.find('=').unwrap_or(opt.len());
-            let (pattern, _) = opt.split_at(opt_name_len);
-            match pattern {
-                    "allow_other" 
-                        | "default_permissions"
-                        | "rootmode"
-                        | "blkdev"
-                        | "blksize"
-                        | "max_read"
-                        | "fd"
-                        | "user_id"
-                        | "fsname"
-                        | "subtype" => {
-                    Some(String::from(opt))
-                }
-                _ => None
-            }
-        } else {
-            None
-        }
-    }).collect()
 }

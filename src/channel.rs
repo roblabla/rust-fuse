@@ -45,6 +45,7 @@ impl Channel {
         })
     }
 
+    #[cfg(feature="mio")]
     pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
         // Taken from https://github.com/rust-lang/rust/blob/6ccfe68076abc78392ab9e1d81b5c1a2123af657/src/libstd/sys/unix/fd.rs#L164
         // Behavior should be consistent accross OSes.
