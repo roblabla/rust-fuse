@@ -131,7 +131,6 @@ cfg_if! {
             }
 
             pub fn add_opt(&mut self, opt: MetaFuseOpt) {
-                info!("Add opt: {}, {} {}", opt.to_string(), self.opts_fuse.len(), self.opts_fusermount.len());
                 match opt {
                     AutoUnmount => self.opts_fusermount.push(opt),
                     _ => self.opts_fuse.push(opt),
