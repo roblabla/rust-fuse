@@ -11,7 +11,7 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::path::{PathBuf, Path};
 use thread_scoped::{scoped, JoinGuard};
-use libc::{EAGAIN, EINTR, ENODEV, ENOENT};
+use libc::{EAGAIN, EINTR, ENODEV, ENOENT, EBADMSG};
 use channel::{self, Channel};
 use Filesystem;
 use request;
@@ -62,28 +62,41 @@ impl<FS: Filesystem> Session<FS> {
         &self.ch.mountpoint()
     }
 
+    /// Returns an asynchronous rust session that can run in a custom event
+    /// loop. The file descriptor is set to nonblocking to ensure it works
+    /// correctly from tokio.
+    #[cfg(feature = "mio")]
+    pub fn evented(self) -> io::Result<FuseEvented<FS>> {
+        self.ch.set_nonblocking(true);
+        Ok(FuseEvented(self))
+    }
+
     /// Receive a single kernel request and dispatches it to method calls into
     /// te filesystem. This method is meant to be used in an event loop, with
     /// mio.
     ///
     /// Takes a buffer to allow reducing allocations.
     pub fn handle_one_req(&mut self, buf: &mut Vec<u8>) -> io::Result<()> {
-        self.ch.receive(buf)?;
-        match request::request(self.ch.sender(), &buf) {
-            // Dispatch request
-            Some(req) => request::dispatch(&req, self),
-            // Short read. Panic on illegal request.
-            None => panic!("Illegal request !")
+        match self.ch.receive(buf) {
+            Ok(()) => match request::request(self.ch.sender(), &buf) {
+                    // Dispatch request
+                    Some(req) => Ok(request::dispatch(&req, self)),
+                    // Quit loop on illegal request
+                    None => Err(io::Error::last_os_error()),
+            },
+            Err(err) => match err.raw_os_error() {
+                    // Operation interrupted. Accordingly to FUSE, this is safe to retry
+                    Some(ENOENT) => Ok(()),
+                    // Interrupted system call, retry
+                    Some(EINTR) => Ok(()),
+                    // Explicitly try again
+                    Some(EAGAIN) => Ok(()),
+                    // Filesystem was unmounted, quit the loop
+                    Some(ENODEV) => Ok(()),
+                    // Unhandled error
+                    _ => return Err(err),
+            },
         }
-        Ok(())
-    }
-
-    /// Returns an asynchronous rust session that can run in a custom event
-    /// loop. The file descriptor is set to nonblocking to ensure it works
-    /// correctly from tokio.
-    pub fn evented(self) -> io::Result<FuseEvented<FS>> {
-        self.ch.set_nonblocking(true);
-        Ok(FuseEvented(self))
     }
 
     /// Run the session loop that receives kernel requests and dispatches them to method
