@@ -1,27 +1,39 @@
 [package]
-name = "fuse"
-version = "0.2.8"
-authors = ["Andreas Neuhaus <zargony@zargony.com>"]
+authors = ["Andreas Neuhaus <zargony@zargony.com>", "Eric Delanghe <delanghe.eric.dev@gmail.com>"]
 build = "build.rs"
+categories = ["api-bindings", "filesystem"]
 description = "Rust library for filesystems in userspace (FUSE)"
 documentation = "https://docs.rs/fuse"
 homepage = "https://github.com/zargony/rust-fuse"
-repository = "https://github.com/zargony/rust-fuse"
-readme = "README.md"
 keywords = ["fuse", "filesystem", "system", "bindings"]
 license = "MIT"
+name = "fuse"
+readme = "README.md"
+repository = "https://github.com/zargony/rust-fuse"
+version = "0.3.0"
 
 [build-dependencies]
-pkg-config = "^0.3.7"
+pkg-config = "0.3"
 
 [dependencies]
+cfg-if = "0.1.2"
+errno  = "0.2.3"
 libc = "0.2"
-log = "0.3"
+log  = "0.3"
+sendfd = "0.1.0"
+thread-scoped = "1"
 time = "0.1"
-thread-scoped = "1.0"
+
+#rust-mount dependencie
+getopts = { version = "0.2.15", optional = true }
+mio = { version = "0.6", optional = true }
 
 [dev-dependencies]
 env_logger = "0.3"
+
+[features]
+default = []
+rust-mount = ["getopts"]
 
 [lib]
 name = "fuse"

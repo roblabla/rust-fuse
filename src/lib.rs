@@ -10,10 +10,22 @@
 #![warn(missing_docs, bad_style, unused, unused_extern_crates, unused_import_braces, unused_qualifications, missing_debug_implementations)]
 
 extern crate libc;
+
 #[macro_use]
 extern crate log;
 extern crate time;
 extern crate thread_scoped;
+#[macro_use]
+extern crate cfg_if;
+cfg_if! {
+    if #[cfg(feature="rust-mount")] {
+        extern crate errno;
+        extern crate sendfd;
+        extern crate getopts;
+    }
+}
+#[cfg(feature = "mio")]
+extern crate mio;
 
 use std::convert::AsRef;
 use std::io;
@@ -31,7 +43,11 @@ pub use reply::ReplyXattr;
 pub use reply::ReplyXTimes;
 pub use request::Request;
 pub use session::{Session, BackgroundSession};
+#[cfg(feature = "mio")]
+pub use session::FuseEvented;
 
+#[macro_use]
+mod fuse_opts;
 mod argument;
 mod channel;
 mod fuse;
@@ -54,6 +70,8 @@ pub enum FileType {
     RegularFile,
     /// Symbolic link (S_IFLNK)
     Symlink,
+    /// Unix domain socket (S_IFSOCK)
+    Socket,
 }
 
 /// File attributes
@@ -385,4 +403,11 @@ pub fn mount<FS: Filesystem, P: AsRef<Path>> (filesystem: FS, mountpoint: &P, op
 /// be unmounted.
 pub unsafe fn spawn_mount<'a, FS: Filesystem+Send+'a, P: AsRef<Path>> (filesystem: FS, mountpoint: &P, options: &[&OsStr]) -> io::Result<BackgroundSession<'a>> {
     Session::new(filesystem, mountpoint.as_ref(), options).and_then(|se| se.spawn())
+}
+
+/// Mount the given filesystem to the given mountpointa and return Evented FS
+/// Use handle_one_req on it to do execute one by one fuse's operations
+#[cfg(feature = "mio")]
+pub fn mount_evented<FS: Filesystem, P: AsRef<Path>> (filesystem: FS, mountpoint: &P, options: &[&OsStr]) -> io::Result<FuseEvented<FS>> {
+    Session::new(filesystem, mountpoint.as_ref(), options).and_then(|se| se.evented())
 }

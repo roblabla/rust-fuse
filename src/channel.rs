@@ -7,11 +7,13 @@ use std::ffi::{CString, CStr, OsStr};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{PathBuf, Path};
 use libc::{self, c_int, c_void, size_t};
-use fuse::{fuse_args, fuse_mount_compat25};
+use fuse_opts::fuse_args;
+use fuse::fuse_mount_compat25;
 use reply::ReplySender;
 
 /// Helper function to provide options as a fuse_args struct
 /// (which contains an argc count and an argv pointer)
+
 fn with_fuse_args<T, F: FnOnce(&fuse_args) -> T> (options: &[&OsStr], f: F) -> T {
     let mut args = vec![CString::new("rust-fuse").unwrap()];
     args.extend(options.iter().map(|s| CString::new(s.as_bytes()).unwrap()));
@@ -23,7 +25,7 @@ fn with_fuse_args<T, F: FnOnce(&fuse_args) -> T> (options: &[&OsStr], f: F) -> T
 #[derive(Debug)]
 pub struct Channel {
     mountpoint: PathBuf,
-    fd: c_int,
+    pub fd: c_int,
 }
 
 impl Channel {
@@ -34,14 +36,37 @@ impl Channel {
     pub fn new (mountpoint: &Path, options: &[&OsStr]) -> io::Result<Channel> {
         let mountpoint = try!(mountpoint.canonicalize());
         with_fuse_args(options, |args| {
-            let mnt = try!(CString::new(mountpoint.as_os_str().as_bytes()));
-            let fd = unsafe { fuse_mount_compat25(mnt.as_ptr(), args) };
+            let fd = fuse_mount_compat25(&mountpoint, args)?;
             if fd < 0 {
                 Err(io::Error::last_os_error())
             } else {
                 Ok(Channel { mountpoint: mountpoint, fd: fd })
             }
         })
+    }
+
+    #[cfg(feature="mio")]
+    pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
+        // Taken from https://github.com/rust-lang/rust/blob/6ccfe68076abc78392ab9e1d81b5c1a2123af657/src/libstd/sys/unix/fd.rs#L164
+        // Behavior should be consistent accross OSes.
+        unsafe {
+            let previous = libc::fcntl(self.fd, libc::F_GETFL);
+            if previous == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            let new = if nonblocking {
+                previous | libc::O_NONBLOCK
+            } else {
+                previous & !libc::O_NONBLOCK
+            };
+            if new != previous {
+                let err = libc::fcntl(self.fd, libc::F_SETFL, new);
+                if err == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+            }
+            Ok(())
+        }
     }
 
     /// Return path of the mounted filesystem
@@ -127,18 +152,11 @@ pub fn unmount (mountpoint: &Path) -> io::Result<()> {
     #[cfg(not(any(target_os = "macos", target_os = "freebsd", target_os = "dragonfly",
                   target_os = "openbsd", target_os = "bitrig", target_os = "netbsd")))] #[inline]
     fn libc_umount (mnt: &CStr) -> c_int {
-        use fuse::fuse_unmount_compat22;
-        use std::io::ErrorKind::PermissionDenied;
 
+        // TODO: Recode fuse_unmount_compat22 in pure rust.
+        // This impl might not work if the process calling umount is not root.
         let rc = unsafe { libc::umount(mnt.as_ptr()) };
-        if rc < 0 && io::Error::last_os_error().kind() == PermissionDenied {
-            // Linux always returns EPERM for non-root users.  We have to let the
-            // library go through the setuid-root "fusermount -u" to unmount.
-            unsafe { fuse_unmount_compat22(mnt.as_ptr()); }
-            0
-        } else {
-            rc
-        }
+        rc
     }
 
     let mnt = try!(CString::new(mountpoint.as_os_str().as_bytes()));

@@ -62,6 +62,43 @@ impl<FS: Filesystem> Session<FS> {
         &self.ch.mountpoint()
     }
 
+    /// Returns an asynchronous rust session that can run in a custom event
+    /// loop. The file descriptor is set to nonblocking to ensure it works
+    /// correctly from tokio.
+    #[cfg(feature = "mio")]
+    pub fn evented(self) -> io::Result<FuseEvented<FS>> {
+        self.ch.set_nonblocking(true)?;
+        Ok(FuseEvented(self))
+    }
+
+    /// Receive a single kernel request and dispatches it to method calls into
+    /// te filesystem. This method is meant to be used in an event loop, with
+    /// mio.
+    ///
+    /// Takes a buffer to allow reducing allocations.
+    pub fn handle_one_req(&mut self, buf: &mut Vec<u8>) -> io::Result<()> {
+        match self.ch.receive(buf) {
+            Ok(()) => match request::request(self.ch.sender(), &buf) {
+                    // Dispatch request
+                    Some(req) => Ok(request::dispatch(&req, self)),
+                    // Quit loop on illegal request
+                    None => Err(io::Error::last_os_error()),
+            },
+            Err(err) => match err.raw_os_error() {
+                    // Operation interrupted. Accordingly to FUSE, this is safe to retry
+                    Some(ENOENT) => Ok(()),
+                    // Interrupted system call, retry
+                    Some(EINTR) => Ok(()),
+                    // Explicitly try again
+                    Some(EAGAIN) => Ok(()),
+                    // Filesystem was unmounted, quit the loop
+                    Some(ENODEV) => Ok(()),
+                    // Unhandled error
+                    _ => return Err(err),
+            },
+        }
+    }
+
     /// Run the session loop that receives kernel requests and dispatches them to method
     /// calls into the filesystem. This read-dispatch-loop is non-concurrent to prevent
     /// having multiple buffers (which take up much memory), but the filesystem methods
@@ -150,5 +187,71 @@ impl<'a> Drop for BackgroundSession<'a> {
 impl<'a> fmt::Debug for BackgroundSession<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "BackgroundSession {{ mountpoint: {:?}, guard: JoinGuard<()> }}", self.mountpoint)
+    }
+}
+
+cfg_if! {
+    if #[cfg(feature = "mio")] {
+        use mio::{Evented, Poll, Token, Ready, PollOpt};
+        use mio::unix::EventedFd;
+
+        ///
+        /// A FuseEvented provides a way to use the FUSE filesystem in a custom event
+        /// loop. It implements the mio Evented trait, so it can be polled for
+        /// readiness.
+        ///
+        /// ```rust
+        /// # extern crate rust_fuse;
+        /// # extern crate mio;
+        /// # use rust_fuse::mount_evented;
+        ///
+        /// let FUSE: mio::Token = Token(0);
+        /// let poll = mio::Poll::new()?;
+        /// let fuse_handle = mount_evented(fs, mountpoint, &[])?;
+        /// // Start listening for incoming connections
+        /// poll.register(&fuse_handle, FUSE, mio::Ready::readable(),
+        ///               mio::PollOpt::edge())?;
+        /// // Other potential registers here
+        /// 
+        /// // Create storage for events
+        /// let mut events = mio::Events::with_capacity(1024);
+        /// loop {
+        ///     poll.poll(&mut events, None)?;
+        /// 
+        ///     for event in events.iter() {
+        ///         match event.token() {
+        ///             FUSE => {
+        ///                 fuse_handle.handle_one();
+        ///             }
+        ///             // Handle other registers
+        ///             _ => unreachable!(),
+        ///         }
+        ///     }
+        /// }
+        /// # }
+        /// ```
+        ///
+        // TODO: Drop
+        #[derive(Debug)]
+        pub struct FuseEvented<FS: Filesystem>(Session<FS>);
+
+        impl<FS: Filesystem>  Evented for FuseEvented<FS> {
+            fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+                EventedFd(&self.0.ch.fd).register(poll, token, interest, opts)
+            }
+            fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+                EventedFd(&self.0.ch.fd).reregister(poll, token, interest, opts)
+            }
+            fn deregister(&self, poll: &Poll) -> io::Result<()> {
+                EventedFd(&self.0.ch.fd).deregister(poll)
+            }
+        }
+
+        impl<FS: Filesystem> FuseEvented<FS> {
+            /// Read and execute one fuse's request before returning
+            pub fn handle_one_req(&mut self, buf: &mut Vec<u8>) -> io::Result<()> {
+                self.0.handle_one_req(buf)
+            }
+        }
     }
 }

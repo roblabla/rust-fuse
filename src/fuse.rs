@@ -4,29 +4,15 @@
 
 #![allow(non_camel_case_types, missing_docs, dead_code)]
 
-use libc::{c_int, c_char};
+use fuse_opts::fuse_args;
 
-//
-// FUSE arguments (see fuse_opt.h for details)
-//
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct fuse_args {
-    pub argc: c_int,
-    pub argv: *const *const c_char,
-    pub allocated: c_int,
+cfg_if! {
+    if #[cfg(feature="rust-mount")] {
+        use fuse_opts::{FuseOpts, MetaFuseOpt};
+        use std::ffi::CStr;
+        use std::slice;
+    }
 }
-
-//
-// FUSE common (see fuse_common_compat.h for details)
-//
-
-extern "system" {
-    pub fn fuse_mount_compat25 (mountpoint: *const c_char, args: *const fuse_args) -> c_int;
-    pub fn fuse_unmount_compat22 (mountpoint: *const c_char);
-}
-
 //
 // FUSE kernel (see fuse_kernel.h for details)
 //
@@ -525,4 +511,231 @@ pub struct fuse_dirent {
     pub namelen: u32,
     pub typ: u32,
     // followed by name of namelen bytes
+}
+
+#[cfg(feature="rust-mount")]
+use std::ffi::CString;
+#[cfg(feature="rust-mount")]
+use std::os::unix::ffi::OsStrExt;
+use std::path::PathBuf;
+
+#[cfg(feature="rust-mount")]
+use libc::getuid;
+#[cfg(feature="rust-mount")]
+use libc::getgid;
+#[cfg(feature="rust-mount")]
+use libc::mount;
+#[cfg(feature="rust-mount")]
+use std::fs::OpenOptions;
+#[cfg(feature="rust-mount")]
+use std::os::unix::io::AsRawFd;
+#[cfg(feature="rust-mount")]
+use std::os::unix::io::IntoRawFd;
+
+use std;
+
+mod sys {
+    #[cfg(not(feature="rust-mount"))]
+    use libc::{c_int, c_char};
+    #[cfg(not(feature="rust-mount"))]
+    use super::fuse_args;
+    extern "system" {
+        #[cfg(not(feature="rust-mount"))]
+        pub fn fuse_mount_compat25(mountpoint: *const c_char, args: *const fuse_args) -> c_int;
+        #[cfg(not(feature="rust-mount"))]
+        pub fn fuse_unmount_compat22 (mountpoint: *const c_char);
+    }
+}
+
+#[cfg(feature="rust-mount")]
+fn fuse_mount_sys(mountpoint: &PathBuf, flags: u64, mnt_opts: &FuseOpts) -> i32
+{
+    // TODO:Check mountpoint
+    // TODO:Check nonempty
+    // TODO:Check auto_umount
+    let f = OpenOptions::new().read(true).write(true).open("/dev/fuse").unwrap();
+
+    let opts = format!("fd={},{}",
+                       f.as_raw_fd(),
+                       mnt_opts.to_string());
+    info!("{}", opts);
+    // TODO: Add kernel opt
+    // 
+    //TODO: understand:
+    /*
+	strcpy(type, mo->blkdev ? "fuseblk" : "fuse");
+	if (mo->subtype) {
+		strcat(type, ".");
+		strcat(type, mo->subtype);
+	}
+	strcpy(source,
+	       mo->fsname ? mo->fsname : (mo->subtype ? mo->subtype : devname));
+    */
+    let c_sources = CString::new("/dev/fuse").unwrap();
+    let c_mnt = CString::new(mountpoint.as_os_str().as_bytes()).unwrap();
+    let c_fs = CString::new("fuse").unwrap();
+    let c_opts = CString::new(opts).unwrap();
+    info!("MOUNT({:?} {:?} {:?} {:?})", c_sources, c_mnt, c_fs, c_opts);
+    let res = unsafe{
+        #[cfg(target_pointer_width = "32")]
+        let flags = flags as u32;
+        mount(c_sources.as_ptr(), c_mnt.as_ptr(), c_fs.as_ptr(), flags, c_opts.as_ptr() as *mut c_void)
+    };
+    if res < 0 {
+        return res;
+    } else {
+        return f.into_raw_fd();
+    }
+}
+
+// /usr/include/sys/mount.h
+const MS_NOSUID :u64 = 2;
+const MS_NODEV  :u64 = 4;
+const FUSE_COMMFD_ENV: &str = "_FUSE_COMMFD";
+
+cfg_if! {
+    if #[cfg(feature = "rust-mount")] {
+        use sendfd::UnixSendFd;
+        use std::process::{Command, Stdio};
+        use std::os::unix::net::UnixStream;
+        use libc::{self, c_void};
+        use errno::errno;
+        use std::mem;
+
+        fn fuse_mount_fusermount(mountpoint: &PathBuf, _: &fuse_args, mnt_opts: &FuseOpts) -> i32
+        {
+            let (sock1, sock2) = match UnixStream::pair() {
+                Ok(res) => res,
+                Err(err) => {
+                    error!("{:?}", err);
+                    return -1;
+                }
+            };
+            let fd = sock2.as_raw_fd();
+
+            unsafe {
+                libc::fcntl(fd, libc::F_SETFD, 0);
+            }
+            let mut fusermount = Command::new("fusermount");
+            if mnt_opts.opts_fuse.len() > 0 {
+                fusermount.arg("-o").arg(
+                    mnt_opts.opts_fuse.iter()
+                    .map(|x| x.to_string()).collect::<Vec<String>>().join(",")
+                    );
+            }
+            if mnt_opts.opts_fusermount.len() > 0 {
+                fusermount.arg("-o").arg(
+                    mnt_opts.opts_fusermount.iter()
+                    .map(|x| x.to_string()).collect::<Vec<String>>().join(",")
+                    );
+            }
+
+            match fusermount
+                .arg("--")
+                .arg(mountpoint)
+                .env(FUSE_COMMFD_ENV, format!("{}", fd))
+                .stdout(Stdio::inherit())
+                .spawn() {
+                    Ok(_) => (),
+                    Err(err) => {
+                        error!("{:?}", err);
+                        return -1;
+                    }
+                };
+            let res = sock1.recvfd().unwrap_or(-1);
+            if is_opt_fusemount!(AutoUnmount, mnt_opts) {
+                info!("forget fusermount socket");
+                mem::forget(sock1);
+            }
+            return res;
+        }
+
+        fn fuse_kern_mount(mountpoint: &PathBuf, args: &fuse_args) -> i32
+        {
+            let flags = MS_NOSUID | MS_NODEV;
+            let mut mnt_opts = FuseOpts::new();
+            mnt_opts.fuse_opt_parse(args);
+
+            if let None = get_opt_fuse!(Uid, mnt_opts) {
+                mnt_opts.add_opt(MetaFuseOpt::Uid(unsafe{getuid()}));
+            }
+            if let None = get_opt_fuse!(Gid, mnt_opts) {
+                mnt_opts.add_opt(MetaFuseOpt::Gid(unsafe{getgid()}));
+            }
+            if let None = get_opt_fuse!(RootMode, mnt_opts) {
+                mnt_opts.add_opt(MetaFuseOpt::RootMode(40755));
+            }
+            // TODO: check if allow_other and allow_root aren't mutually active
+            // TODO: check if help
+            // TODO: get kernel/other flags options
+
+            let mut res = fuse_mount_sys(mountpoint, flags, &mnt_opts);
+            if res < 0 {
+                let err = errno().0;
+                error!("fuse_mount_sys errno: {}", err);
+                // TODO: error
+                if err == libc::EPERM {
+                    warn!("fuse_mount_sys EPERM: backing to fusermount...");
+                    res = fuse_mount_fusermount(mountpoint, args, &mnt_opts);
+                } else {
+                    panic!("Err {}: fuse_kern_mount panic !", err);
+                }
+            }
+            info!("fantafs: fuse_mount_compat25: fd={}", res);
+            res
+        }
+
+        fn fuse_opt_parse(args: &fuse_args) -> Vec<String> {
+            let argv: Vec<&str> = unsafe {
+                let paths: &[*const _] = slice::from_raw_parts(args.argv, args.argc as usize);
+                paths.iter().map(
+                    |cs| CStr::from_ptr(*cs).to_str().expect("Error convert argv")
+                    ).collect()
+            };
+
+            argv.iter().filter_map(|&arg| {
+                if let ("-o", opt) = arg.split_at(2) {
+                    let opt_name_len = opt.find('=').unwrap_or(opt.len());
+                    let (pattern, _) = opt.split_at(opt_name_len);
+                    match pattern {
+                        "allow_other" 
+                            | "auto_unmount"
+                            | "default_permissions"
+                            | "rootmode"
+                            | "blkdev"
+                            | "blksize"
+                            | "max_read"
+                            | "fd"
+                            | "user_id"
+                            | "fsname"
+                            | "subtype" => {
+                                Some(String::from(opt))
+                            }
+                        _ => None
+                    }
+                } else {
+                    None
+                }
+            }).collect()
+        }
+
+        pub fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> std::io::Result<i32>
+        {
+            Ok(fuse_kern_mount(mountpoint, args))
+        }
+    }
+}
+#[cfg(not(feature="rust-mount"))]
+pub fn fuse_mount_compat25(mountpoint: &PathBuf, args: &fuse_args) -> std::io::Result<i32>
+{
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let mnt = try!(CString::new(mountpoint.as_os_str().as_bytes()));
+    let fd = unsafe { sys::fuse_mount_compat25(mnt.as_ptr(), args) };
+    if fd < 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(fd)
+    }
 }
